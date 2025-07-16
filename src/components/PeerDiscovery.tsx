@@ -8,17 +8,21 @@ import { cn } from '@/lib/utils';
 
 interface PeerDiscoveryProps {
   localId: string;
+  localName: string;
   onCreateRoom: () => void;
   onJoinRoom: (roomId: string) => void;
+  onNameChange: (name: string) => void;
   connectedPeers: Array<{ id: string; name?: string }>;
   roomId?: string;
   roomUrl?: string;
 }
 
 export function PeerDiscovery({ 
-  localId, 
+  localId,
+  localName,
   onCreateRoom, 
-  onJoinRoom, 
+  onJoinRoom,
+  onNameChange,
   connectedPeers,
   roomId,
   roomUrl 
@@ -215,13 +219,24 @@ export function PeerDiscovery({
         transition={{ delay: 0.3 }}
       >
         <Card className="p-4 bg-muted/20 border border-border/30">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-foreground">Your Device ID</p>
-              <p className="text-xs text-muted-foreground font-mono">{localId}</p>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-foreground">Your Device</p>
+                <p className="text-xs text-muted-foreground font-mono">{localId}</p>
+              </div>
+              <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center">
+                <Smartphone className="w-4 h-4 text-accent" />
+              </div>
             </div>
-            <div className="w-8 h-8 rounded-full bg-accent/10 flex items-center justify-center">
-              <Smartphone className="w-4 h-4 text-accent" />
+            <div className="space-y-2">
+              <p className="text-xs text-muted-foreground">Device Name</p>
+              <Input
+                value={localName}
+                onChange={(e) => onNameChange(e.target.value)}
+                placeholder="Enter your device name..."
+                className="bg-card/50 text-sm"
+              />
             </div>
           </div>
         </Card>

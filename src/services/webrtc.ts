@@ -19,6 +19,7 @@ export class WebRTCService {
   private peers: Map<string, PeerConnection> = new Map();
   private transfers: Map<string, FileTransfer> = new Map();
   private localId: string;
+  private localName: string;
   private roomId?: string;
   private signalingSocket?: WebSocket;
   private onPeerConnected?: (peerId: string, peerName?: string) => void;
@@ -29,6 +30,24 @@ export class WebRTCService {
 
   constructor() {
     this.localId = this.generateId();
+    this.localName = this.generateDeviceName();
+  }
+
+  private generateDeviceName(): string {
+    const deviceTypes = ['Phone', 'Laptop', 'Desktop', 'Tablet'];
+    const adjectives = ['Blue', 'Red', 'Green', 'Silver', 'Black', 'White'];
+    const randomDevice = deviceTypes[Math.floor(Math.random() * deviceTypes.length)];
+    const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
+    const randomNumber = Math.floor(Math.random() * 99) + 1;
+    return `${randomAdjective} ${randomDevice} ${randomNumber}`;
+  }
+
+  setLocalName(name: string): void {
+    this.localName = name.trim() || this.generateDeviceName();
+  }
+
+  getLocalName(): string {
+    return this.localName;
   }
 
   private generateId(): string {
@@ -274,11 +293,25 @@ export class WebRTCService {
   }
 
   private simulateLocalConnection(): void {
-    // Simulate peer discovery for local network
-    setTimeout(() => {
-      const simulatedPeerId = 'local-' + this.generateId();
-      this.onPeerConnected?.(simulatedPeerId, 'Local Device');
-    }, 1000);
+    // Simulate peer discovery for local network with unique names
+    const deviceCount = Math.floor(Math.random() * 3) + 1; // 1-3 devices
+    
+    for (let i = 0; i < deviceCount; i++) {
+      setTimeout(() => {
+        const simulatedPeerId = 'local-' + this.generateId();
+        const simulatedName = this.generateDeviceName();
+        
+        // Add peer to our map with the generated name
+        const mockPeer: PeerConnection = {
+          id: simulatedPeerId,
+          connection: {} as RTCPeerConnection, // Mock connection
+          name: simulatedName
+        };
+        this.peers.set(simulatedPeerId, mockPeer);
+        
+        this.onPeerConnected?.(simulatedPeerId, simulatedName);
+      }, (i + 1) * 800); // Stagger connections
+    }
   }
 
   private async handleSignalingMessage(message: any): Promise<void> {

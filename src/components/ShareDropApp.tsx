@@ -122,6 +122,10 @@ export function ShareDropApp() {
     }
   }, [webrtc, toast]);
 
+  const handleNameChange = useCallback((name: string) => {
+    webrtc.setLocalName(name);
+  }, [webrtc]);
+
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
   }, []);
@@ -282,8 +286,10 @@ export function ShareDropApp() {
           >
             <PeerDiscovery
               localId={webrtc.getLocalId()}
+              localName={webrtc.getLocalName()}
               onCreateRoom={handleCreateRoom}
               onJoinRoom={handleJoinRoom}
+              onNameChange={handleNameChange}
               connectedPeers={connectedPeers}
               roomId={roomId}
               roomUrl={roomUrl}
