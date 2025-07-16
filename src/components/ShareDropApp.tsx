@@ -25,6 +25,28 @@ export function ShareDropApp() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const { toast } = useToast();
 
+  const handleJoinRoom = useCallback(async (roomId: string) => {
+    if (roomId.trim()) {
+      try {
+        await webrtc.joinRoom(roomId.trim());
+        setRoomId(roomId.trim());
+        const url = `${window.location.origin}?room=${roomId.trim()}`;
+        setRoomUrl(url);
+        
+        toast({
+          title: "Joined Room",
+          description: `Connected to room ${roomId.trim()}`,
+        });
+      } catch (error) {
+        toast({
+          title: "Failed to Join Room",
+          description: "Please check the room ID and try again",
+          variant: "destructive"
+        });
+      }
+    }
+  }, [webrtc, toast]);
+
   useEffect(() => {
     webrtc.setCallbacks({
       onPeerConnected: (peerId: string, peerName?: string) => {
@@ -68,35 +90,37 @@ export function ShareDropApp() {
       }
     });
 
+    // Check for room parameter in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomParam = urlParams.get('room');
+    if (roomParam && !roomId) {
+      handleJoinRoom(roomParam);
+    }
+
     return () => {
       webrtc.disconnect();
     };
-  }, [webrtc, toast, transfers]);
+  }, [webrtc, toast, transfers, roomId, handleJoinRoom]);
 
-  const handleCreateRoom = useCallback(() => {
-    const newRoomId = uuidv4().slice(0, 8);
-    const url = `${window.location.origin}?room=${newRoomId}`;
-    setRoomId(newRoomId);
-    setRoomUrl(url);
-    
-    toast({
-      title: "Room Created",
-      description: `Room ${newRoomId} is ready for connections`,
-    });
-  }, [toast]);
-
-  const handleJoinRoom = useCallback((roomId: string) => {
-    if (roomId.trim()) {
-      setRoomId(roomId.trim());
-      const url = `${window.location.origin}?room=${roomId.trim()}`;
+  const handleCreateRoom = useCallback(async () => {
+    try {
+      const newRoomId = await webrtc.createRoom();
+      const url = `${window.location.origin}?room=${newRoomId}`;
+      setRoomId(newRoomId);
       setRoomUrl(url);
       
       toast({
-        title: "Joining Room",
-        description: `Connecting to room ${roomId.trim()}`,
+        title: "Room Created",
+        description: `Room ${newRoomId} is ready for connections`,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to Create Room",
+        description: "Please try again",
+        variant: "destructive"
       });
     }
-  }, [toast]);
+  }, [webrtc, toast]);
 
   const handleFilesSelected = useCallback((files: File[]) => {
     setSelectedFiles(files);
