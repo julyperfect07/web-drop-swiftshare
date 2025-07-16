@@ -2,41 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
-All colors MUST be HSL.
-*/
+/* Dark-themed P2P File Sharing Design System */
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    /* Dark theme primary colors */
+    --background: 222 84% 4.9%;
+    --foreground: 210 40% 98%;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card: 222 84% 6%;
+    --card-foreground: 210 40% 98%;
 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover: 222 84% 6%;
+    --popover-foreground: 210 40% 98%;
 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
+    --primary: 142 69% 58%;
+    --primary-foreground: 222 84% 4.9%;
 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --secondary: 222 47% 11%;
+    --secondary-foreground: 210 40% 98%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 217 32% 18%;
+    --muted-foreground: 215 20% 65%;
 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
+    --accent: 142 69% 58%;
+    --accent-foreground: 222 84% 4.9%;
 
-    --destructive: 0 84.2% 60.2%;
+    --destructive: 0 84% 60%;
     --destructive-foreground: 210 40% 98%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
+    --border: 217 32% 18%;
+    --input: 217 32% 18%;
+    --ring: 142 69% 58%;
 
-    --radius: 0.5rem;
+    --success: 142 69% 58%;
+    --warning: 38 92% 50%;
+    --info: 199 89% 48%;
+
+    /* Custom gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(142 69% 58%), hsl(142 69% 45%));
+    --gradient-card: linear-gradient(135deg, hsl(222 84% 6%), hsl(222 84% 8%));
+    --gradient-glow: radial-gradient(circle at center, hsl(142 69% 58% / 0.3), transparent);
+
+    /* Shadows */
+    --shadow-glow: 0 0 40px hsl(142 69% 58% / 0.3);
+    --shadow-card: 0 8px 32px hsl(222 84% 4.9% / 0.5);
+    --shadow-float: 0 4px 20px hsl(222 84% 4.9% / 0.3);
+
+    --radius: 0.75rem;
 
     --sidebar-background: 0 0% 98%;
 
@@ -101,5 +114,39 @@ All colors MUST be HSL.
 
   body {
     @apply bg-background text-foreground;
+    background: linear-gradient(135deg, hsl(222 84% 4.9%), hsl(222 84% 3%));
+    min-height: 100vh;
+  }
+}
+
+@layer components {
+  .glow-effect {
+    box-shadow: var(--shadow-glow);
+  }
+  
+  .card-gradient {
+    background: var(--gradient-card);
+  }
+  
+  .primary-gradient {
+    background: var(--gradient-primary);
+  }
+  
+  .floating-animation {
+    animation: float 3s ease-in-out infinite;
+  }
+  
+  .pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+  
+  .shimmer {
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(142 69% 58% / 0.1),
+      transparent
+    );
+    animation: shimmer 2s ease-in-out infinite;
   }
 }
