@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wifi, Users, Smartphone, QrCode, Copy, Check } from 'lucide-react';
+import { Users, Smartphone, QrCode, Copy, Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -40,7 +41,7 @@ export function PeerDiscovery({
 
   return (
     <div className="space-y-6">
-      {/* Local Network Discovery */}
+      {/* Connected Devices */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -49,12 +50,12 @@ export function PeerDiscovery({
         <Card className="p-6 card-gradient border border-border/50">
           <div className="flex items-center space-x-3 mb-4">
             <div className="w-12 h-12 rounded-full bg-accent/10 flex items-center justify-center">
-              <Wifi className="w-6 h-6 text-accent" />
+              <Users className="w-6 h-6 text-accent" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-foreground">Local Network</h3>
+              <h3 className="text-lg font-semibold text-foreground">Connected Devices</h3>
               <p className="text-sm text-muted-foreground">
-                Devices on the same WiFi network will appear automatically
+                Devices connected through QR code or room link
               </p>
             </div>
           </div>
@@ -83,7 +84,7 @@ export function PeerDiscovery({
                         <p className="text-sm font-medium text-foreground">
                           {peer.name || `Device ${peer.id.slice(0, 6)}`}
                         </p>
-                        <p className="text-xs text-muted-foreground">Connected</p>
+                        <p className="text-xs text-muted-foreground">Connected via room</p>
                       </div>
                     </div>
                     <div className="w-3 h-3 rounded-full bg-success animate-pulse" />
@@ -100,7 +101,7 @@ export function PeerDiscovery({
                   <Users className="w-8 h-8 text-muted-foreground" />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  No devices found on local network
+                  {roomId ? 'Share the QR code or room link to connect devices' : 'Create a room to start connecting devices'}
                 </p>
               </motion.div>
             )}
@@ -120,9 +121,9 @@ export function PeerDiscovery({
               <QrCode className="w-6 h-6 text-accent" />
             </div>
             <div>
-              <h3 className="text-lg font-semibold text-foreground">Cross-Network Sharing</h3>
+              <h3 className="text-lg font-semibold text-foreground">Room Sharing</h3>
               <p className="text-sm text-muted-foreground">
-                Create or join a room to connect with remote devices
+                Create or join a room to connect with other devices
               </p>
             </div>
           </div>

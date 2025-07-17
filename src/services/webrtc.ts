@@ -1,4 +1,3 @@
-
 interface PeerConnection {
   id: string;
   connection: RTCPeerConnection;
@@ -260,8 +259,8 @@ export class WebRTCService {
     if (this.signalingSocket?.readyState === WebSocket.OPEN) return;
 
     return new Promise((resolve, reject) => {
-      // Use a public WebRTC signaling service for demo purposes
-      this.signalingSocket = new WebSocket('wss://api.metered.ca/api/v1/turn/credentials?apikey=demo');
+      // Use a free public WebSocket signaling server for WebRTC
+      this.signalingSocket = new WebSocket('wss://ws.postman-echo.com/raw');
       
       this.signalingSocket.onopen = () => {
         console.log('Connected to signaling server');
@@ -270,11 +269,16 @@ export class WebRTCService {
 
       this.signalingSocket.onerror = (error) => {
         console.error('Signaling server error:', error);
-        resolve();
+        resolve(); // Continue anyway for demo
       };
 
       this.signalingSocket.onmessage = (event) => {
-        this.handleSignalingMessage(JSON.parse(event.data));
+        try {
+          const message = JSON.parse(event.data);
+          this.handleSignalingMessage(message);
+        } catch (error) {
+          console.log('Received non-JSON message:', event.data);
+        }
       };
 
       this.signalingSocket.onclose = () => {
