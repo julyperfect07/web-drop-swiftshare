@@ -245,14 +245,14 @@ export class WebRTCService {
   async createRoom(): Promise<string> {
     this.roomId = this.generateId();
     await this.connectToSignalingServer();
-    this.sendSignalingMessage('', { type: 'create-room', roomId: this.roomId, peerId: this.localId });
+    this.sendSignalingMessage('', { type: 'create-room', roomId: this.roomId, peerId: this.localId, peerName: this.localName });
     return this.roomId;
   }
 
   async joinRoom(roomId: string): Promise<void> {
     this.roomId = roomId;
     await this.connectToSignalingServer();
-    this.sendSignalingMessage('', { type: 'join-room', roomId, peerId: this.localId });
+    this.sendSignalingMessage('', { type: 'join-room', roomId, peerId: this.localId, peerName: this.localName });
   }
 
   private async connectToSignalingServer(): Promise<void> {
