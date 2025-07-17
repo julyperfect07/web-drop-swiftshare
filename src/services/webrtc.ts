@@ -245,51 +245,80 @@ export class WebRTCService {
   async createRoom(): Promise<string> {
     this.roomId = this.generateId();
     await this.connectToSignalingServer();
-    this.sendSignalingMessage('', { type: 'create-room', roomId: this.roomId, peerId: this.localId, peerName: this.localName });
+    this.simulateSignalingServer();
+    
+    // Store room creator info
+    const roomKey = `webrtc-room-${this.roomId}`;
+    localStorage.setItem(roomKey, JSON.stringify({
+      creator: this.localId,
+      creatorName: this.localName,
+      created: Date.now()
+    }));
+    
     return this.roomId;
   }
 
   async joinRoom(roomId: string): Promise<void> {
     this.roomId = roomId;
     await this.connectToSignalingServer();
-    this.sendSignalingMessage('', { type: 'join-room', roomId, peerId: this.localId, peerName: this.localName });
+    this.simulateSignalingServer();
+    
+    // Check if room exists
+    const roomKey = `webrtc-room-${roomId}`;
+    const roomInfo = localStorage.getItem(roomKey);
+    
+    if (roomInfo) {
+      const room = JSON.parse(roomInfo);
+      // Notify room creator of new peer
+      this.sendSignalingMessage(room.creator, { 
+        type: 'peer-joined', 
+        roomId, 
+        peerId: this.localId, 
+        peerName: this.localName 
+      });
+    }
   }
 
   private async connectToSignalingServer(): Promise<void> {
     if (this.signalingSocket?.readyState === WebSocket.OPEN) return;
 
     return new Promise((resolve, reject) => {
-      // Use a free public WebSocket signaling server for WebRTC
-      this.signalingSocket = new WebSocket('wss://ws.postman-echo.com/raw');
-      
-      this.signalingSocket.onopen = () => {
-        console.log('Connected to signaling server');
-        resolve();
-      };
-
-      this.signalingSocket.onerror = (error) => {
-        console.error('Signaling server error:', error);
-        resolve(); // Continue anyway for demo
-      };
-
-      this.signalingSocket.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          this.handleSignalingMessage(message);
-        } catch (error) {
-          console.log('Received non-JSON message:', event.data);
-        }
-      };
-
-      this.signalingSocket.onclose = () => {
-        console.log('Disconnected from signaling server');
-      };
-
-      // Fallback timeout
-      setTimeout(() => {
-        resolve();
-      }, 3000);
+      // Use a simple localStorage-based signaling for same-origin demo
+      console.log('Using localStorage-based signaling for demo');
+      resolve();
     });
+  }
+
+  private simulateSignalingServer() {
+    // Simple polling mechanism for demo purposes
+    const checkForMessages = () => {
+      const roomKey = `webrtc-room-${this.roomId}`;
+      const messagesKey = `${roomKey}-messages`;
+      
+      try {
+        const messages = JSON.parse(localStorage.getItem(messagesKey) || '[]');
+        const unprocessedMessages = messages.filter((msg: any) => 
+          msg.to === this.localId && !msg.processed
+        );
+        
+        unprocessedMessages.forEach((message: any) => {
+          this.handleSignalingMessage(message);
+          message.processed = true;
+        });
+        
+        if (unprocessedMessages.length > 0) {
+          localStorage.setItem(messagesKey, JSON.stringify(messages));
+        }
+      } catch (error) {
+        console.error('Error checking signaling messages:', error);
+      }
+    };
+
+    // Poll every 1 second for new messages
+    const interval = setInterval(checkForMessages, 1000);
+    
+    // Store interval for cleanup
+    (this as any).signalingInterval = interval;
   }
 
   private async handleSignalingMessage(message: any): Promise<void> {
@@ -342,14 +371,26 @@ export class WebRTCService {
   }
 
   private sendSignalingMessage(peerId: string, message: any) {
-    if (this.signalingSocket?.readyState === WebSocket.OPEN) {
-      this.signalingSocket.send(JSON.stringify({
-        ...message,
-        from: this.localId,
-        to: peerId,
-        roomId: this.roomId,
-        peerName: this.localName
-      }));
+    const roomKey = `webrtc-room-${this.roomId}`;
+    const messagesKey = `${roomKey}-messages`;
+    
+    const signalMessage = {
+      ...message,
+      from: this.localId,
+      to: peerId || 'broadcast',
+      roomId: this.roomId,
+      peerName: this.localName,
+      timestamp: Date.now(),
+      processed: false
+    };
+    
+    try {
+      const messages = JSON.parse(localStorage.getItem(messagesKey) || '[]');
+      messages.push(signalMessage);
+      localStorage.setItem(messagesKey, JSON.stringify(messages));
+      console.log('Sent signaling message:', signalMessage.type, 'to:', peerId || 'broadcast');
+    } catch (error) {
+      console.error('Error sending signaling message:', error);
     }
   }
 
@@ -379,6 +420,12 @@ export class WebRTCService {
     if (this.signalingSocket) {
       this.signalingSocket.close();
       this.signalingSocket = undefined;
+    }
+    
+    // Clear signaling interval
+    if ((this as any).signalingInterval) {
+      clearInterval((this as any).signalingInterval);
+      (this as any).signalingInterval = undefined;
     }
   }
 }
