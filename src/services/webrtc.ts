@@ -1,3 +1,4 @@
+
 interface PeerConnection {
   id: string;
   connection: RTCPeerConnection;
@@ -269,8 +270,6 @@ export class WebRTCService {
 
       this.signalingSocket.onerror = (error) => {
         console.error('Signaling server error:', error);
-        // Fallback to local connection simulation
-        this.simulateLocalConnection();
         resolve();
       };
 
@@ -284,38 +283,13 @@ export class WebRTCService {
 
       // Fallback timeout
       setTimeout(() => {
-        if (this.signalingSocket?.readyState !== WebSocket.OPEN) {
-          this.simulateLocalConnection();
-          resolve();
-        }
+        resolve();
       }, 3000);
     });
   }
 
-  private simulateLocalConnection(): void {
-    // Simulate peer discovery for local network with unique names
-    const deviceCount = Math.floor(Math.random() * 3) + 1; // 1-3 devices
-    
-    for (let i = 0; i < deviceCount; i++) {
-      setTimeout(() => {
-        const simulatedPeerId = 'local-' + this.generateId();
-        const simulatedName = this.generateDeviceName();
-        
-        // Add peer to our map with the generated name
-        const mockPeer: PeerConnection = {
-          id: simulatedPeerId,
-          connection: {} as RTCPeerConnection, // Mock connection
-          name: simulatedName
-        };
-        this.peers.set(simulatedPeerId, mockPeer);
-        
-        this.onPeerConnected?.(simulatedPeerId, simulatedName);
-      }, (i + 1) * 800); // Stagger connections
-    }
-  }
-
   private async handleSignalingMessage(message: any): Promise<void> {
-    const { type, from, roomId, offer, answer, candidate } = message;
+    const { type, from, roomId, offer, answer, candidate, peerName } = message;
 
     if (roomId && roomId !== this.roomId) return;
 
@@ -325,6 +299,7 @@ export class WebRTCService {
           await this.createPeer(from, true);
           const peer = this.peers.get(from);
           if (peer) {
+            peer.name = peerName;
             const offer = await peer.connection.createOffer();
             await peer.connection.setLocalDescription(offer);
             this.sendSignalingMessage(from, { type: 'offer', offer });
@@ -335,6 +310,10 @@ export class WebRTCService {
       case 'offer':
         if (from !== this.localId) {
           const peer = await this.createPeer(from, false);
+          const peerObj = this.peers.get(from);
+          if (peerObj) {
+            peerObj.name = peerName;
+          }
           await peer.setRemoteDescription(offer);
           const answer = await peer.createAnswer();
           await peer.setLocalDescription(answer);
@@ -364,14 +343,9 @@ export class WebRTCService {
         ...message,
         from: this.localId,
         to: peerId,
-        roomId: this.roomId
+        roomId: this.roomId,
+        peerName: this.localName
       }));
-    } else {
-      console.log('Signaling not available, simulating local connection');
-      // Simulate successful room creation/joining
-      setTimeout(() => {
-        this.simulateLocalConnection();
-      }, 500);
     }
   }
 
@@ -389,10 +363,19 @@ export class WebRTCService {
 
   disconnect() {
     this.peers.forEach(peer => {
-      peer.connection.close();
+      // Only call close if it exists (for real RTCPeerConnection instances)
+      if (peer.connection && typeof peer.connection.close === 'function') {
+        peer.connection.close();
+      }
     });
     this.peers.clear();
     this.transfers.clear();
+    
+    // Close signaling socket if it exists
+    if (this.signalingSocket) {
+      this.signalingSocket.close();
+      this.signalingSocket = undefined;
+    }
   }
 }
 
