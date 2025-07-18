@@ -47,6 +47,26 @@ export function ShareDropApp() {
     }
   }, [webrtc, toast]);
 
+  const handleCreateRoom = useCallback(async () => {
+    try {
+      const newRoomId = await webrtc.createRoom();
+      const url = `${window.location.origin}?room=${newRoomId}`;
+      setRoomId(newRoomId);
+      setRoomUrl(url);
+      
+      toast({
+        title: "Room Created",
+        description: `Room ${newRoomId} is ready for connections`,
+      });
+    } catch (error) {
+      toast({
+        title: "Failed to Create Room",
+        description: "Please try again",
+        variant: "destructive"
+      });
+    }
+  }, [webrtc, toast]);
+
   useEffect(() => {
     webrtc.setCallbacks({
       onPeerConnected: (peerId: string, peerName?: string) => {
@@ -90,37 +110,23 @@ export function ShareDropApp() {
       }
     });
 
-    // Check for room parameter in URL
+    return () => {
+      webrtc.disconnect();
+    };
+  }, [webrtc, toast, transfers]);
+
+  // Separate effect for URL handling to avoid dependency loops
+  useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const roomParam = urlParams.get('room');
     if (roomParam && !roomId) {
       handleJoinRoom(roomParam);
+    } else if (!roomParam && !roomId) {
+      // Auto-create room if no room exists
+      handleCreateRoom();
     }
+  }, [roomId, handleJoinRoom, handleCreateRoom]);
 
-    return () => {
-      webrtc.disconnect();
-    };
-  }, [webrtc, toast, transfers, roomId, handleJoinRoom]);
-
-  const handleCreateRoom = useCallback(async () => {
-    try {
-      const newRoomId = await webrtc.createRoom();
-      const url = `${window.location.origin}?room=${newRoomId}`;
-      setRoomId(newRoomId);
-      setRoomUrl(url);
-      
-      toast({
-        title: "Room Created",
-        description: `Room ${newRoomId} is ready for connections`,
-      });
-    } catch (error) {
-      toast({
-        title: "Failed to Create Room",
-        description: "Please try again",
-        variant: "destructive"
-      });
-    }
-  }, [webrtc, toast]);
 
   const handleNameChange = useCallback((name: string) => {
     webrtc.setLocalName(name);
