@@ -1,269 +1,104 @@
-interface PeerConnection {
-  id: string;
-  connection: RTCPeerConnection;
-  dataChannel?: RTCDataChannel;
-  name?: string;
-}
+import { v4 as uuidv4 } from 'uuid';
 
-interface FileTransfer {
+export interface FileTransfer {
   id: string;
   name: string;
   size: number;
+  type: string;
   progress: number;
-  status: 'pending' | 'transferring' | 'completed' | 'error';
-  peerId: string;
-  direction: 'send' | 'receive';
+  status: 'pending' | 'transferring' | 'completed' | 'failed';
+  blob?: Blob;
+}
+
+interface WebRTCCallbacks {
+  onPeerConnected?: (peerId: string, peerName?: string) => void;
+  onPeerDisconnected?: (peerId: string) => void;
+  onFileReceived?: (transfer: FileTransfer) => void;
+  onTransferProgress?: (transferId: string, progress: number) => void;
+  onTransferComplete?: (transferId: string) => void;
+}
+
+interface SignalMessage {
+  type: 'offer' | 'answer' | 'ice-candidate' | 'join' | 'leave';
+  from: string;
+  to?: string;
+  data: any;
+  fromName?: string;
+  timestamp: number;
+}
+
+interface RoomData {
+  id: string;
+  creator: string;
+  creatorName: string;
+  peers: Array<{ id: string; name: string }>;
+  messages: SignalMessage[];
+  created: number;
 }
 
 export class WebRTCService {
-  private peers: Map<string, PeerConnection> = new Map();
-  private transfers: Map<string, FileTransfer> = new Map();
   private localId: string;
   private localName: string;
   private roomId?: string;
-  private onPeerConnected?: (peerId: string, peerName?: string) => void;
-  private onPeerDisconnected?: (peerId: string) => void;
-  private onFileReceived?: (transfer: FileTransfer) => void;
-  private onTransferProgress?: (transferId: string, progress: number) => void;
-  private onTransferComplete?: (transferId: string) => void;
-  private signalingInterval?: NodeJS.Timeout;
+  private peers: Map<string, RTCPeerConnection> = new Map();
+  private dataChannels: Map<string, RTCDataChannel> = new Map();
+  private callbacks: WebRTCCallbacks = {};
+  private signalingInterval?: number;
+  private lastMessageIndex = 0;
 
   constructor() {
-    this.localId = this.generateId();
-    this.localName = this.generateDeviceName();
+    this.localId = uuidv4().substring(0, 9);
+    this.localName = this.generateRandomName();
   }
 
-  private generateDeviceName(): string {
-    const deviceTypes = ['Phone', 'Laptop', 'Desktop', 'Tablet'];
-    const adjectives = ['Blue', 'Red', 'Green', 'Silver', 'Black', 'White'];
-    const randomDevice = deviceTypes[Math.floor(Math.random() * deviceTypes.length)];
-    const randomAdjective = adjectives[Math.floor(Math.random() * adjectives.length)];
-    const randomNumber = Math.floor(Math.random() * 99) + 1;
-    return `${randomAdjective} ${randomDevice} ${randomNumber}`;
+  private generateRandomName(): string {
+    const colors = ['Red', 'Blue', 'Green', 'Yellow', 'Purple', 'Orange', 'Pink', 'Cyan'];
+    const devices = ['Phone', 'Laptop', 'Desktop', 'Tablet', 'Computer', 'Device'];
+    const numbers = Math.floor(Math.random() * 100);
+    
+    const color = colors[Math.floor(Math.random() * colors.length)];
+    const device = devices[Math.floor(Math.random() * devices.length)];
+    
+    return `${color} ${device} ${numbers}`;
   }
 
-  setLocalName(name: string): void {
-    this.localName = name.trim() || this.generateDeviceName();
+  getLocalId(): string {
+    return this.localId;
   }
 
   getLocalName(): string {
     return this.localName;
   }
 
-  private generateId(): string {
-    return Math.random().toString(36).substr(2, 9);
+  setLocalName(name: string): void {
+    this.localName = name;
   }
 
-  setCallbacks(callbacks: {
-    onPeerConnected?: (peerId: string, peerName?: string) => void;
-    onPeerDisconnected?: (peerId: string) => void;
-    onFileReceived?: (transfer: FileTransfer) => void;
-    onTransferProgress?: (transferId: string, progress: number) => void;
-    onTransferComplete?: (transferId: string) => void;
-  }) {
-    this.onPeerConnected = callbacks.onPeerConnected;
-    this.onPeerDisconnected = callbacks.onPeerDisconnected;
-    this.onFileReceived = callbacks.onFileReceived;
-    this.onTransferProgress = callbacks.onTransferProgress;
-    this.onTransferComplete = callbacks.onTransferComplete;
-  }
-
-  async createPeer(peerId: string, isInitiator: boolean = false): Promise<RTCPeerConnection> {
-    const configuration: RTCConfiguration = {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
-      ]
-    };
-
-    const peerConnection = new RTCPeerConnection(configuration);
-    
-    const peer: PeerConnection = {
-      id: peerId,
-      connection: peerConnection
-    };
-
-    // Set up data channel
-    if (isInitiator) {
-      const dataChannel = peerConnection.createDataChannel('fileTransfer', {
-        ordered: true
-      });
-      peer.dataChannel = dataChannel;
-      this.setupDataChannel(dataChannel, peerId);
-    } else {
-      peerConnection.ondatachannel = (event) => {
-        peer.dataChannel = event.channel;
-        this.setupDataChannel(event.channel, peerId);
-      };
-    }
-
-    // Handle ICE candidates
-    peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        this.sendSignalingMessage(peerId, {
-          type: 'ice-candidate',
-          candidate: event.candidate
-        });
-      }
-    };
-
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      console.log(`Peer ${peerId} connection state:`, state);
-      if (state === 'connected') {
-        this.onPeerConnected?.(peerId, peer.name);
-      } else if (state === 'disconnected' || state === 'failed' || state === 'closed') {
-        this.peers.delete(peerId);
-        this.onPeerDisconnected?.(peerId);
-      }
-    };
-
-    this.peers.set(peerId, peer);
-    return peerConnection;
-  }
-
-  private setupDataChannel(dataChannel: RTCDataChannel, peerId: string) {
-    dataChannel.onopen = () => {
-      console.log('Data channel opened with peer:', peerId);
-    };
-
-    dataChannel.onmessage = (event) => {
-      this.handleDataChannelMessage(event.data, peerId);
-    };
-
-    dataChannel.onerror = (error) => {
-      console.error('Data channel error:', error);
-    };
-  }
-
-  private handleDataChannelMessage(data: any, peerId: string) {
-    try {
-      const message = JSON.parse(data);
-      
-      if (message.type === 'file-info') {
-        const transfer: FileTransfer = {
-          id: message.id,
-          name: message.name,
-          size: message.size,
-          progress: 0,
-          status: 'pending',
-          peerId,
-          direction: 'receive'
-        };
-        this.transfers.set(transfer.id, transfer);
-        this.onFileReceived?.(transfer);
-      } else if (message.type === 'file-chunk') {
-        this.handleFileChunk(message);
-      } else if (message.type === 'transfer-complete') {
-        const transfer = this.transfers.get(message.transferId);
-        if (transfer) {
-          transfer.status = 'completed';
-          this.onTransferComplete?.(message.transferId);
-        }
-      }
-    } catch (error) {
-      console.error('Error handling data channel message:', error);
-    }
-  }
-
-  private handleFileChunk(message: any) {
-    const transfer = this.transfers.get(message.transferId);
-    if (!transfer) return;
-
-    // In a real implementation, you would accumulate chunks and reconstruct the file
-    const progress = (message.chunkIndex + 1) / message.totalChunks * 100;
-    transfer.progress = progress;
-    
-    this.onTransferProgress?.(message.transferId, progress);
-
-    if (progress >= 100) {
-      transfer.status = 'completed';
-      this.onTransferComplete?.(message.transferId);
-    }
-  }
-
-  async sendFile(file: File, peerId: string): Promise<string> {
-    const peer = this.peers.get(peerId);
-    if (!peer?.dataChannel || peer.dataChannel.readyState !== 'open') {
-      throw new Error('Peer not connected or data channel not ready');
-    }
-
-    const transferId = this.generateId();
-    const transfer: FileTransfer = {
-      id: transferId,
-      name: file.name,
-      size: file.size,
-      progress: 0,
-      status: 'transferring',
-      peerId,
-      direction: 'send'
-    };
-
-    this.transfers.set(transferId, transfer);
-
-    // Send file info
-    peer.dataChannel.send(JSON.stringify({
-      type: 'file-info',
-      id: transferId,
-      name: file.name,
-      size: file.size
-    }));
-
-    // Send file in chunks
-    const chunkSize = 16384; // 16KB chunks
-    const totalChunks = Math.ceil(file.size / chunkSize);
-    
-    for (let i = 0; i < totalChunks; i++) {
-      const start = i * chunkSize;
-      const end = Math.min(start + chunkSize, file.size);
-      const chunk = await file.slice(start, end).arrayBuffer();
-
-      peer.dataChannel.send(JSON.stringify({
-        type: 'file-chunk',
-        transferId,
-        chunkIndex: i,
-        totalChunks,
-        data: Array.from(new Uint8Array(chunk))
-      }));
-
-      const progress = (i + 1) / totalChunks * 100;
-      transfer.progress = progress;
-      this.onTransferProgress?.(transferId, progress);
-    }
-
-    // Send completion message
-    peer.dataChannel.send(JSON.stringify({
-      type: 'transfer-complete',
-      transferId
-    }));
-
-    transfer.status = 'completed';
-    this.onTransferComplete?.(transferId);
-    
-    return transferId;
+  setCallbacks(callbacks: WebRTCCallbacks): void {
+    this.callbacks = callbacks;
   }
 
   async createRoom(): Promise<string> {
-    this.roomId = this.generateId();
+    this.roomId = uuidv4().substring(0, 9);
     console.log('Creating room:', this.roomId);
     
-    // Initialize room data in HTTP storage
+    // Initialize room in localStorage
+    const roomData: RoomData = {
+      id: this.roomId,
+      creator: this.localId,
+      creatorName: this.localName,
+      peers: [{ id: this.localId, name: this.localName }],
+      messages: [],
+      created: Date.now()
+    };
+    
     try {
-      const roomData = {
-        id: this.roomId,
-        creator: this.localId,
-        creatorName: this.localName,
-        peers: [{ id: this.localId, name: this.localName }],
-        messages: [],
-        created: Date.now()
-      };
-      
-      await this.saveRoomData(roomData);
-      this.startSignalingPolling();
+      localStorage.setItem(`sharerooms_${this.roomId}`, JSON.stringify(roomData));
     } catch (error) {
-      console.log('Room creation fallback mode (for demo)');
+      console.log('Failed to save room data to localStorage');
     }
     
+    this.startSignaling();
     return this.roomId;
   }
 
@@ -271,196 +106,414 @@ export class WebRTCService {
     this.roomId = roomId;
     console.log('Joining room:', roomId);
     
+    // Add self to room data
     try {
-      // Get room data and add this peer
-      const roomData = await this.getRoomData();
-      if (roomData) {
-        // Add this peer to the room
-        const existingPeer = roomData.peers.find((p: any) => p.id === this.localId);
-        if (!existingPeer) {
-          roomData.peers.push({ id: this.localId, name: this.localName });
-          await this.saveRoomData(roomData);
-        }
-        
-        // Notify existing peers
-        await this.sendSignalingMessage('broadcast', {
-          type: 'peer-joined',
-          peerId: this.localId,
-          peerName: this.localName
-        });
+      const roomDataStr = localStorage.getItem(`sharerooms_${roomId}`);
+      let roomData: RoomData;
+      
+      if (roomDataStr) {
+        roomData = JSON.parse(roomDataStr);
+      } else {
+        // Create new room data if not exists
+        roomData = {
+          id: roomId,
+          creator: this.localId,
+          creatorName: this.localName,
+          peers: [],
+          messages: [],
+          created: Date.now()
+        };
       }
       
-      this.startSignalingPolling();
-    } catch (error) {
-      console.log('Join room fallback mode (for demo)');
-      this.startSignalingPolling();
-    }
-  }
-
-  private async getRoomData(): Promise<any> {
-    try {
-      const response = await fetch(`https://httpbin.org/cache/${this.roomId}`);
-      if (response.ok) {
-        return await response.json();
+      // Add self to peers list if not already there
+      const existingPeerIndex = roomData.peers.findIndex(p => p.id === this.localId);
+      if (existingPeerIndex === -1) {
+        roomData.peers.push({ id: this.localId, name: this.localName });
+        localStorage.setItem(`sharerooms_${roomId}`, JSON.stringify(roomData));
       }
     } catch (error) {
-      console.log('Failed to get room data (expected for demo)');
+      console.log('Failed to join room in localStorage');
     }
-    return null;
+
+    // Send join message
+    await this.sendSignalMessage({
+      type: 'join',
+      from: this.localId,
+      data: {},
+      fromName: this.localName,
+      timestamp: Date.now()
+    });
+
+    this.startSignaling();
   }
 
-  private async saveRoomData(data: any): Promise<void> {
-    try {
-      await fetch(`https://httpbin.org/cache/${this.roomId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
-      });
-    } catch (error) {
-      console.log('Failed to save room data (expected for demo)');
-    }
-  }
-
-  private startSignalingPolling() {
+  private startSignaling(): void {
     if (this.signalingInterval) {
       clearInterval(this.signalingInterval);
     }
 
-    const pollForMessages = async () => {
-      try {
-        const roomData = await this.getRoomData();
-        if (roomData?.messages) {
-          // Process unread messages
-          const unreadMessages = roomData.messages.filter((msg: any) => 
-            (msg.to === this.localId || msg.to === 'broadcast') && 
-            msg.from !== this.localId &&
-            !msg.processedBy?.includes(this.localId)
-          );
-
-          for (const message of unreadMessages) {
-            console.log('Processing message:', message.type);
-            await this.handleSignalingMessage(message);
-            
-            // Mark as processed
-            message.processedBy = message.processedBy || [];
-            message.processedBy.push(this.localId);
-          }
-
-          if (unreadMessages.length > 0) {
-            await this.saveRoomData(roomData);
-          }
-        }
-      } catch (error) {
-        // Expected to fail in demo environment
-        console.log('Signaling poll failed (expected for demo)');
-      }
-    };
-
-    // Poll every 3 seconds
-    this.signalingInterval = setInterval(pollForMessages, 3000);
+    // Poll for messages every 2 seconds
+    this.signalingInterval = window.setInterval(() => {
+      this.pollForMessages();
+    }, 2000);
     
     // Initial poll
-    pollForMessages();
+    this.pollForMessages();
   }
 
-  private async handleSignalingMessage(message: any): Promise<void> {
-    const { type, from, offer, answer, candidate, peerName } = message;
+  private async sendSignalMessage(message: SignalMessage): Promise<void> {
+    if (!this.roomId) return;
 
-    console.log('Handling signaling message:', type, 'from:', from);
+    try {
+      const roomDataStr = localStorage.getItem(`sharerooms_${this.roomId}`);
+      if (roomDataStr) {
+        const roomData: RoomData = JSON.parse(roomDataStr);
+        roomData.messages.push(message);
+        localStorage.setItem(`sharerooms_${this.roomId}`, JSON.stringify(roomData));
+      }
+    } catch (error) {
+      console.log('Failed to send signal message:', error);
+    }
+  }
 
-    switch (type) {
-      case 'peer-joined':
-        if (from !== this.localId) {
-          await this.createPeer(from, true);
-          const peer = this.peers.get(from);
-          if (peer) {
-            peer.name = peerName;
-            const offer = await peer.connection.createOffer();
-            await peer.connection.setLocalDescription(offer);
-            await this.sendSignalingMessage(from, { type: 'offer', offer });
-          }
+  private pollForMessages(): void {
+    if (!this.roomId) return;
+
+    try {
+      const roomDataStr = localStorage.getItem(`sharerooms_${this.roomId}`);
+      if (!roomDataStr) return;
+
+      const roomData: RoomData = JSON.parse(roomDataStr);
+      const newMessages = roomData.messages.slice(this.lastMessageIndex);
+      
+      for (const message of newMessages) {
+        if (message.from !== this.localId) {
+          this.handleSignalMessage(message);
+        }
+      }
+      
+      this.lastMessageIndex = roomData.messages.length;
+    } catch (error) {
+      console.log('Failed to poll messages:', error);
+    }
+  }
+
+  private async handleSignalMessage(message: SignalMessage): Promise<void> {
+    console.log('Received signal message:', message.type, 'from:', message.from);
+
+    switch (message.type) {
+      case 'join':
+        console.log('Peer joined:', message.from, message.fromName);
+        this.callbacks.onPeerConnected?.(message.from, message.fromName);
+        // Initiate connection as the existing peer
+        if (!this.peers.has(message.from)) {
+          await this.createPeerConnection(message.from, true);
         }
         break;
 
       case 'offer':
-        if (from !== this.localId) {
-          const peer = await this.createPeer(from, false);
-          const peerObj = this.peers.get(from);
-          if (peerObj) {
-            peerObj.name = peerName;
-          }
-          await peer.setRemoteDescription(offer);
-          const answer = await peer.createAnswer();
-          await peer.setLocalDescription(answer);
-          await this.sendSignalingMessage(from, { type: 'answer', answer });
+        if (message.to === this.localId || !message.to) {
+          await this.handleOffer(message.from, message.data, message.fromName);
         }
         break;
 
       case 'answer':
-        const peer = this.peers.get(from);
-        if (peer) {
-          await peer.connection.setRemoteDescription(answer);
+        if (message.to === this.localId) {
+          await this.handleAnswer(message.from, message.data);
         }
         break;
 
       case 'ice-candidate':
-        const targetPeer = this.peers.get(from);
-        if (targetPeer) {
-          await targetPeer.connection.addIceCandidate(candidate);
+        if (message.to === this.localId) {
+          await this.handleIceCandidate(message.from, message.data);
         }
+        break;
+
+      case 'leave':
+        this.handlePeerLeave(message.from);
         break;
     }
   }
 
-  private async sendSignalingMessage(peerId: string, message: any) {
-    try {
-      const roomData = await this.getRoomData() || { messages: [] };
-      
-      const signalMessage = {
-        ...message,
+  private async createPeerConnection(peerId: string, initiator: boolean): Promise<void> {
+    const config: RTCConfiguration = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
+    };
+
+    const peerConnection = new RTCPeerConnection(config);
+    this.peers.set(peerId, peerConnection);
+
+    // Handle ICE candidates
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.sendSignalMessage({
+          type: 'ice-candidate',
+          from: this.localId,
+          to: peerId,
+          data: event.candidate,
+          fromName: this.localName,
+          timestamp: Date.now()
+        });
+      }
+    };
+
+    // Handle connection state changes
+    peerConnection.onconnectionstatechange = () => {
+      console.log(`Connection state with ${peerId}:`, peerConnection.connectionState);
+      if (peerConnection.connectionState === 'connected') {
+        console.log(`Successfully connected to peer ${peerId}`);
+      } else if (peerConnection.connectionState === 'disconnected' || 
+          peerConnection.connectionState === 'failed') {
+        this.handlePeerLeave(peerId);
+      }
+    };
+
+    if (initiator) {
+      // Create data channel
+      const dataChannel = peerConnection.createDataChannel('fileTransfer');
+      this.setupDataChannel(dataChannel, peerId);
+      this.dataChannels.set(peerId, dataChannel);
+
+      // Create and send offer
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      await this.sendSignalMessage({
+        type: 'offer',
         from: this.localId,
         to: peerId,
-        peerName: this.localName,
-        timestamp: Date.now(),
-        processedBy: []
+        data: offer,
+        fromName: this.localName,
+        timestamp: Date.now()
+      });
+    } else {
+      // Handle incoming data channels
+      peerConnection.ondatachannel = (event) => {
+        const dataChannel = event.channel;
+        this.setupDataChannel(dataChannel, peerId);
+        this.dataChannels.set(peerId, dataChannel);
       };
-
-      roomData.messages = roomData.messages || [];
-      roomData.messages.push(signalMessage);
-      
-      await this.saveRoomData(roomData);
-      console.log('Sent signaling message:', message.type, 'to:', peerId);
-    } catch (error) {
-      console.log('Failed to send signaling message (expected for demo)');
     }
   }
 
-  getLocalId(): string {
-    return this.localId;
-  }
-
-  getPeers(): PeerConnection[] {
-    return Array.from(this.peers.values());
-  }
-
-  getTransfers(): FileTransfer[] {
-    return Array.from(this.transfers.values());
-  }
-
-  disconnect() {
-    this.peers.forEach(peer => {
-      if (peer.connection && typeof peer.connection.close === 'function') {
-        peer.connection.close();
-      }
-    });
-    this.peers.clear();
-    this.transfers.clear();
+  private async handleOffer(peerId: string, offer: RTCSessionDescriptionInit, peerName?: string): Promise<void> {
+    let peerConnection = this.peers.get(peerId);
     
+    if (!peerConnection) {
+      await this.createPeerConnection(peerId, false);
+      peerConnection = this.peers.get(peerId)!;
+    }
+
+    await peerConnection.setRemoteDescription(offer);
+    const answer = await peerConnection.createAnswer();
+    await peerConnection.setLocalDescription(answer);
+
+    await this.sendSignalMessage({
+      type: 'answer',
+      from: this.localId,
+      to: peerId,
+      data: answer,
+      fromName: this.localName,
+      timestamp: Date.now()
+    });
+
+    this.callbacks.onPeerConnected?.(peerId, peerName);
+  }
+
+  private async handleAnswer(peerId: string, answer: RTCSessionDescriptionInit): Promise<void> {
+    const peerConnection = this.peers.get(peerId);
+    if (peerConnection) {
+      await peerConnection.setRemoteDescription(answer);
+    }
+  }
+
+  private async handleIceCandidate(peerId: string, candidate: RTCIceCandidateInit): Promise<void> {
+    const peerConnection = this.peers.get(peerId);
+    if (peerConnection) {
+      await peerConnection.addIceCandidate(candidate);
+    }
+  }
+
+  private handlePeerLeave(peerId: string): void {
+    const peerConnection = this.peers.get(peerId);
+    if (peerConnection) {
+      peerConnection.close();
+    }
+    this.peers.delete(peerId);
+    this.dataChannels.delete(peerId);
+    this.callbacks.onPeerDisconnected?.(peerId);
+  }
+
+  private setupDataChannel(dataChannel: RTCDataChannel, peerId: string): void {
+    dataChannel.onopen = () => {
+      console.log(`Data channel opened with ${peerId}`);
+    };
+
+    dataChannel.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data);
+        if (message.type === 'file-chunk') {
+          this.handleFileChunk(message);
+        } else if (message.type === 'file-start') {
+          this.handleFileStart(message);
+        } else if (message.type === 'file-end') {
+          this.handleFileEnd(message);
+        }
+      } catch (error) {
+        console.error('Failed to parse data channel message:', error);
+      }
+    };
+
+    dataChannel.onerror = (error) => {
+      console.error('Data channel error:', error);
+    };
+  }
+
+  private receivedFiles: Map<string, { transfer: FileTransfer; chunks: Uint8Array[] }> = new Map();
+
+  private handleFileStart(message: any): void {
+    const transfer: FileTransfer = {
+      id: message.id,
+      name: message.name,
+      size: message.size,
+      type: message.mimeType || 'application/octet-stream',
+      progress: 0,
+      status: 'transferring'
+    };
+
+    this.receivedFiles.set(message.id, { transfer, chunks: [] });
+    this.callbacks.onFileReceived?.(transfer);
+  }
+
+  private handleFileChunk(message: any): void {
+    const fileData = this.receivedFiles.get(message.id);
+    if (fileData) {
+      const chunk = new Uint8Array(message.chunk);
+      fileData.chunks.push(chunk);
+      
+      const totalReceived = fileData.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const progress = Math.round((totalReceived / fileData.transfer.size) * 100);
+      
+      this.callbacks.onTransferProgress?.(message.id, progress);
+    }
+  }
+
+  private handleFileEnd(message: any): void {
+    const fileData = this.receivedFiles.get(message.id);
+    if (fileData) {
+      // Combine all chunks into a single blob
+      const totalSize = fileData.chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+      const combined = new Uint8Array(totalSize);
+      let offset = 0;
+      
+      for (const chunk of fileData.chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      const blob = new Blob([combined], { type: fileData.transfer.type });
+      fileData.transfer.blob = blob;
+      fileData.transfer.status = 'completed';
+      
+      this.callbacks.onTransferComplete?.(message.id);
+      
+      // Create download link
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileData.transfer.name;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      
+      this.receivedFiles.delete(message.id);
+    }
+  }
+
+  async sendFile(file: File, peerId: string): Promise<void> {
+    const dataChannel = this.dataChannels.get(peerId);
+    if (!dataChannel || dataChannel.readyState !== 'open') {
+      throw new Error('Data channel not ready');
+    }
+
+    const transferId = uuidv4();
+    const chunkSize = 16384; // 16KB chunks
+
+    // Send file start message
+    dataChannel.send(JSON.stringify({
+      type: 'file-start',
+      id: transferId,
+      name: file.name,
+      size: file.size,
+      mimeType: file.type
+    }));
+
+    // Send file in chunks
+    const reader = new FileReader();
+    let offset = 0;
+
+    const sendNextChunk = () => {
+      const slice = file.slice(offset, offset + chunkSize);
+      reader.readAsArrayBuffer(slice);
+    };
+
+    reader.onload = (event) => {
+      if (event.target?.result) {
+        const chunk = new Uint8Array(event.target.result as ArrayBuffer);
+        
+        dataChannel.send(JSON.stringify({
+          type: 'file-chunk',
+          id: transferId,
+          chunk: Array.from(chunk)
+        }));
+
+        offset += chunk.length;
+        const progress = Math.round((offset / file.size) * 100);
+        this.callbacks.onTransferProgress?.(transferId, progress);
+
+        if (offset < file.size) {
+          sendNextChunk();
+        } else {
+          // Send file end message
+          dataChannel.send(JSON.stringify({
+            type: 'file-end',
+            id: transferId
+          }));
+          this.callbacks.onTransferComplete?.(transferId);
+        }
+      }
+    };
+
+    sendNextChunk();
+  }
+
+  disconnect(): void {
     if (this.signalingInterval) {
       clearInterval(this.signalingInterval);
       this.signalingInterval = undefined;
     }
+
+    // Send leave message
+    if (this.roomId) {
+      this.sendSignalMessage({
+        type: 'leave',
+        from: this.localId,
+        data: {},
+        fromName: this.localName,
+        timestamp: Date.now()
+      });
+    }
+
+    // Close all peer connections
+    for (const peerConnection of this.peers.values()) {
+      peerConnection.close();
+    }
+    this.peers.clear();
+    this.dataChannels.clear();
+    this.lastMessageIndex = 0;
   }
 }
-
-export type { FileTransfer, PeerConnection };

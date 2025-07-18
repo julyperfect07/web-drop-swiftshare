@@ -25,12 +25,10 @@ export function TransferProgress({ transfers, onCancelTransfer }: TransferProgre
       case 'pending':
         return <Clock className="w-4 h-4 text-warning" />;
       case 'transferring':
-        return transfer.direction === 'send' ? 
-          <Upload className="w-4 h-4 text-accent" /> : 
-          <Download className="w-4 h-4 text-info" />;
+        return <Download className="w-4 h-4 text-info" />;
       case 'completed':
         return <Check className="w-4 h-4 text-success" />;
-      case 'error':
+      case 'failed':
         return <X className="w-4 h-4 text-destructive" />;
       default:
         return <File className="w-4 h-4 text-muted-foreground" />;
@@ -45,7 +43,7 @@ export function TransferProgress({ transfers, onCancelTransfer }: TransferProgre
         return 'text-accent';
       case 'completed':
         return 'text-success';
-      case 'error':
+      case 'failed':
         return 'text-destructive';
       default:
         return 'text-muted-foreground';
@@ -90,10 +88,8 @@ export function TransferProgress({ transfers, onCancelTransfer }: TransferProgre
                         {transfer.status}
                       </span>
                       <span>•</span>
-                      <span className={cn(
-                        transfer.direction === 'send' ? 'text-accent' : 'text-info'
-                      )}>
-                        {transfer.direction === 'send' ? 'Sending' : 'Receiving'}
+                      <span className="text-info">
+                        Receiving
                       </span>
                     </div>
                   </div>
@@ -141,7 +137,7 @@ export function TransferProgress({ transfers, onCancelTransfer }: TransferProgre
                 </motion.div>
               )}
 
-              {transfer.status === 'error' && (
+              {transfer.status === 'failed' && (
                 <motion.div
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
